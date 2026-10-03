@@ -25,16 +25,14 @@ STRICT RULES:
 FEWSHOT_USER = """Evidence record:
 - verdict: AI-generated
 - confidence: 0.97
-- fft_anomaly_score: 0.87
-- clip_max_generator_similarity: 0.79
-- top_evidence: ["fft_anomaly_score", "clip_max_generator_similarity"]
+- clip_semantic_score: 0.92
+- fft_anomaly_score: 0.45
+- top_evidence: ["clip_semantic_score", "fft_anomaly_score"]
 
 Write the explanation now, following all rules above."""
 
 FEWSHOT_ASSISTANT = """The image was classified as AI-generated with 97% confidence.
-The strongest signal was a high frequency-domain anomaly score (0.87). The image's
-semantic embedding also showed strong similarity (0.79) to known generator outputs,
-reinforcing the verdict."""
+The strongest signal was a high semantic anomaly score (0.92) indicating alignment with synthetic generator embeddings. Frequency-domain analysis also exhibited characteristic high-frequency artifacts (0.45), reinforcing the verdict."""
 
 FEWSHOT_VIDEO_USER = """Evidence record:
 - media_type: video

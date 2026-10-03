@@ -65,16 +65,46 @@ def extract_clip_features(pil_image: Image.Image, generator_centroids: dict) -> 
     """Main entry point used by the rest of the pipeline."""
     embedding = embed_image(pil_image)
 
+    # Extract probe weights if present
+    probe_w = generator_centroids.get("_probe_weights")
+    probe_b = generator_centroids.get("_probe_bias", 0.0)
+
+    # Filter out metadata keys and real centroid for generator matching
+    ai_centroids = {
+        name: centroid
+        for name, centroid in generator_centroids.items()
+        if not name.startswith("_") and name.lower() != "real"
+    }
+
     similarities = {
         name: float(np.dot(embedding, centroid))
-        for name, centroid in generator_centroids.items()
+        for name, centroid in ai_centroids.items()
     }
     best_match = max(similarities, key=similarities.get) if similarities else None
+    max_ai_sim = max(similarities.values()) if similarities else 0.0
+
+    real_centroid = generator_centroids.get("real")
+    if real_centroid is not None:
+        real_sim = float(np.dot(embedding, real_centroid))
+        contrast_margin = float(max_ai_sim - real_sim)
+    else:
+        real_sim = 0.65
+        contrast_margin = float(max_ai_sim - 0.65)
+
+    if probe_w is not None:
+        logit = float(np.dot(embedding, probe_w) + probe_b)
+        semantic_score = float(1.0 / (1.0 + np.exp(-logit)))
+    else:
+        semantic_score = max_ai_sim
 
     return {
-        "clip_max_generator_similarity": max(similarities.values()) if similarities else 0.0,
+        "clip_semantic_score": semantic_score,
+        "clip_contrast_margin": contrast_margin,
+        "clip_max_generator_similarity": max_ai_sim,
         "clip_best_match_generator": best_match,
         "clip_similarities_by_generator": similarities,
+        "clip_real_similarity": real_sim,
+        "clip_embedding": embedding,
     }
 
 

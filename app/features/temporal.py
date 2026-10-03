@@ -109,10 +109,10 @@ def compute_clip_temporal_drift(pil_frames: list, generator_centroids: dict = No
     and average generator similarity against known centroids.
 
     Returns:
-        (clip_temporal_drift, mean_clip_generator_similarity)
+        (clip_temporal_drift, mean_clip_generator_similarity, mean_semantic_score, mean_contrast_margin, best_match)
     """
     if not CLIP_AVAILABLE or len(pil_frames) < 1:
-        return 0.0, 0.795
+        return 0.0, 0.70, 0.50, 0.0, None
 
     embeddings = [embed_image(f) for f in pil_frames]
 
@@ -128,21 +128,53 @@ def compute_clip_temporal_drift(pil_frames: list, generator_centroids: dict = No
     else:
         mean_drift = 0.0
 
-    # Generator similarity across frames
-    if generator_centroids:
-        sims = []
-        for emb in embeddings:
-            similarities = {
-                name: float(np.dot(emb, centroid))
-                for name, centroid in generator_centroids.items()
-            }
-            if similarities:
-                sims.append(max(similarities.values()))
-        mean_gen_sim = float(np.mean(sims)) if sims else 0.795
-    else:
-        mean_gen_sim = 0.795
+    probe_w = generator_centroids.get("_probe_weights") if generator_centroids else None
+    probe_b = generator_centroids.get("_probe_bias", 0.0) if generator_centroids else 0.0
+    real_c = generator_centroids.get("real") if generator_centroids else None
 
-    return mean_drift, mean_gen_sim
+    ai_centroids = (
+        {
+            k: v for k, v in generator_centroids.items()
+            if not k.startswith("_") and k.lower() != "real"
+        }
+        if generator_centroids
+        else {}
+    )
+
+    sims = []
+    semantic_scores = []
+    contrast_margins = []
+    best_matches = []
+
+    for emb in embeddings:
+        if probe_w is not None:
+            logit = float(np.dot(emb, probe_w) + probe_b)
+            semantic_scores.append(float(1.0 / (1.0 + np.exp(-logit))))
+        else:
+            semantic_scores.append(0.5)
+
+        if ai_centroids:
+            cur_sims = {name: float(np.dot(emb, centroid)) for name, centroid in ai_centroids.items()}
+            best_gen = max(cur_sims, key=cur_sims.get)
+            max_sim = cur_sims[best_gen]
+            sims.append(max_sim)
+            best_matches.append(best_gen)
+
+            if real_c is not None:
+                real_sim = float(np.dot(emb, real_c))
+                contrast_margins.append(max_sim - real_sim)
+            else:
+                contrast_margins.append(max_sim - 0.65)
+        else:
+            sims.append(0.68)
+            contrast_margins.append(0.0)
+
+    mean_gen_sim = float(np.mean(sims)) if sims else 0.68
+    mean_semantic_score = float(np.mean(semantic_scores)) if semantic_scores else 0.50
+    mean_contrast_margin = float(np.mean(contrast_margins)) if contrast_margins else 0.0
+    overall_best_match = max(set(best_matches), key=best_matches.count) if best_matches else None
+
+    return mean_drift, mean_gen_sim, mean_semantic_score, mean_contrast_margin, overall_best_match
 
 
 def extract_video_features(
@@ -164,20 +196,29 @@ def extract_video_features(
     warping_error = compute_optical_flow_warping_error(frames_bgr)
 
     # 3. CLIP Semantic Temporal Drift and Generator Similarity
-    temporal_drift, mean_gen_sim = compute_clip_temporal_drift(
-        pil_frames, generator_centroids=generator_centroids
-    )
+    (
+        temporal_drift,
+        mean_gen_sim,
+        mean_semantic_score,
+        mean_contrast_margin,
+        best_match,
+    ) = compute_clip_temporal_drift(pil_frames, generator_centroids=generator_centroids)
 
-    return {
+    res = {
         # Spatial foundation
+        "clip_semantic_score": mean_semantic_score,
+        "clip_contrast_margin": mean_contrast_margin,
+        "clip_max_generator_similarity": mean_gen_sim,
         "fft_anomaly_score": mean_fft,
         "dct_anomaly_score": mean_dct,
-        "clip_max_generator_similarity": mean_gen_sim,
         # Temporal extensions
         "optical_flow_warping_error": warping_error,
         "interframe_fft_variance": fft_variance,
         "clip_temporal_drift": temporal_drift,
     }
+    if best_match:
+        res["clip_best_match_generator"] = best_match
+    return res
 
 
 if __name__ == "__main__":

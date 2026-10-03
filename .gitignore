@@ -3,5 +3,6 @@ __pycache__/
 *.pyc
 data/cifake/
 data/*.csv
+data/genimage_cache/
 models/*.joblib
 .env

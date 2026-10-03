@@ -32,8 +32,17 @@ app = FastAPI(title="Explainable AI-Generated Media Detector")
 import os
 import joblib
 
-MODEL_PATH = "models/fusion_model.joblib"  # trained via train_fusion.py on real CIFAKE features
-CENTROIDS_PATH = "models/generator_centroids.joblib"
+# Model paths: Prefer Version 3 (GenImage) if available, fallback to Version 1 (CIFAKE)
+MODEL_PATH = (
+    "models/genimage_fusion_model.joblib"
+    if os.path.exists("models/genimage_fusion_model.joblib")
+    else "models/fusion_model.joblib"
+)
+CENTROIDS_PATH = (
+    "models/genimage_centroids.joblib"
+    if os.path.exists("models/genimage_centroids.joblib")
+    else "models/generator_centroids.joblib"
+)
 _classifier = None
 _generator_centroids = None
 
@@ -62,7 +71,11 @@ def root():
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "model_version": "v3_genimage" if "genimage" in MODEL_PATH else "v1_cifake",
+        "active_centroids": list(get_generator_centroids().keys()),
+    }
 
 
 @app.post("/predict")
@@ -74,9 +87,9 @@ async def predict(file: UploadFile = File(...)):
     except Exception:
         raise HTTPException(status_code=400, detail="Could not read image file")
 
-    # Match CIFAKE training resolution (32x32) for consistent frequency features
-    if pil_image.size != (32, 32):
-        freq_image = pil_image.resize((32, 32), Image.Resampling.LANCZOS)
+    # Standardize image to (256, 256) for high-resolution GenImage frequency analysis
+    if pil_image.size != (256, 256):
+        freq_image = pil_image.resize((256, 256), Image.Resampling.LANCZOS)
     else:
         freq_image = pil_image
 
@@ -88,22 +101,33 @@ async def predict(file: UploadFile = File(...)):
     centroids = get_generator_centroids()
     if CLIP_AVAILABLE and centroids:
         clip_features = extract_clip_features(pil_image, centroids)
+        features["clip_semantic_score"] = clip_features["clip_semantic_score"]
+        features["clip_contrast_margin"] = clip_features["clip_contrast_margin"]
         features["clip_max_generator_similarity"] = clip_features["clip_max_generator_similarity"]
+        if clip_features.get("clip_best_match_generator"):
+            features["clip_best_match_generator"] = clip_features["clip_best_match_generator"]
     else:
-        features["clip_max_generator_similarity"] = 0.795
+        features["clip_semantic_score"] = 0.50
+        features["clip_contrast_margin"] = 0.0
+        features["clip_max_generator_similarity"] = 0.68
 
     classifier = get_classifier()
     evidence = classifier.predict(features)
 
     explanation_result = generate_explanation(evidence)
 
-    return {
+    response = {
         "verdict": evidence["verdict"],
         "confidence": evidence["confidence"],
+        "model_version": "v3_genimage" if "genimage" in MODEL_PATH else "v1_cifake",
         "evidence": evidence,
         "explanation": explanation_result["explanation"],
         "explanation_source": explanation_result["source"],
     }
+    if evidence.get("clip_best_match_generator"):
+        response["closest_ai_generator"] = evidence["clip_best_match_generator"]
+
+    return response
 
 
 @app.post("/predict-video")

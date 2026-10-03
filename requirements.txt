@@ -1,0 +1,16 @@
+numpy
+scipy
+opencv-python
+scikit-learn
+scikit-image
+shap
+pandas
+joblib
+torch
+open_clip_torch
+Pillow
+fastapi
+uvicorn[standard]
+python-multipart
+requests
+tqdm

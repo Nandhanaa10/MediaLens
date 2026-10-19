@@ -1,0 +1,107 @@
+{
+  "unified_probe_metrics": {
+    "overall_accuracy": 0.8525,
+    "overall_auc_roc": 0.9238,
+    "overall_ap": 0.9306
+  },
+  "per_generator_performance": {
+    "Real": {
+      "samples": 200,
+      "accuracy": 0.885,
+      "mean_p_ai": 0.3447
+    },
+    "ADM": {
+      "samples": 28,
+      "accuracy": 0.7857,
+      "mean_p_ai": 0.6714
+    },
+    "BigGAN": {
+      "samples": 28,
+      "accuracy": 0.9286,
+      "mean_p_ai": 0.7029
+    },
+    "GLIDE": {
+      "samples": 29,
+      "accuracy": 0.8621,
+      "mean_p_ai": 0.6983
+    },
+    "Midjourney": {
+      "samples": 29,
+      "accuracy": 1.0,
+      "mean_p_ai": 0.7253
+    },
+    "SD15": {
+      "samples": 29,
+      "accuracy": 0.5172,
+      "mean_p_ai": 0.5164
+    },
+    "VQDM": {
+      "samples": 29,
+      "accuracy": 0.6552,
+      "mean_p_ai": 0.5366
+    },
+    "Wukong": {
+      "samples": 28,
+      "accuracy": 1.0,
+      "mean_p_ai": 0.7361
+    }
+  },
+  "leave_one_generator_out_transfer": {
+    "ADM": {
+      "unseen_generator": "ADM",
+      "zero_shot_ai_accuracy": 0.6783,
+      "zero_shot_mean_p_ai": 0.5561,
+      "real_specificity": 0.905,
+      "joint_auc_roc": 0.8697,
+      "joint_ap": 0.8481
+    },
+    "BigGAN": {
+      "unseen_generator": "BigGAN",
+      "zero_shot_ai_accuracy": 0.7692,
+      "zero_shot_mean_p_ai": 0.6016,
+      "real_specificity": 0.92,
+      "joint_auc_roc": 0.928,
+      "joint_ap": 0.8989
+    },
+    "GLIDE": {
+      "unseen_generator": "GLIDE",
+      "zero_shot_ai_accuracy": 0.7762,
+      "zero_shot_mean_p_ai": 0.6095,
+      "real_specificity": 0.91,
+      "joint_auc_roc": 0.9308,
+      "joint_ap": 0.8978
+    },
+    "Midjourney": {
+      "unseen_generator": "Midjourney",
+      "zero_shot_ai_accuracy": 0.9441,
+      "zero_shot_mean_p_ai": 0.6914,
+      "real_specificity": 0.91,
+      "joint_auc_roc": 0.9774,
+      "joint_ap": 0.9643
+    },
+    "SD15": {
+      "unseen_generator": "SD15",
+      "zero_shot_ai_accuracy": 0.3636,
+      "zero_shot_mean_p_ai": 0.4398,
+      "real_specificity": 0.92,
+      "joint_auc_roc": 0.7551,
+      "joint_ap": 0.693
+    },
+    "VQDM": {
+      "unseen_generator": "VQDM",
+      "zero_shot_ai_accuracy": 0.2308,
+      "zero_shot_mean_p_ai": 0.3949,
+      "real_specificity": 0.905,
+      "joint_auc_roc": 0.694,
+      "joint_ap": 0.6002
+    },
+    "Wukong": {
+      "unseen_generator": "Wukong",
+      "zero_shot_ai_accuracy": 0.8592,
+      "zero_shot_mean_p_ai": 0.6301,
+      "real_specificity": 0.915,
+      "joint_auc_roc": 0.9577,
+      "joint_ap": 0.9392
+    }
+  }
+}

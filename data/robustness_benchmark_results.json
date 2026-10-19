@@ -1,0 +1,56 @@
+{
+  "clean": {
+    "condition_name": "Clean (Unperturbed)",
+    "accuracy": 0.85,
+    "auc_roc": 0.93,
+    "retention_rate": 1.0
+  },
+  "jpeg_90": {
+    "condition_name": "JPEG (Quality 90)",
+    "accuracy": 0.84,
+    "auc_roc": 0.908,
+    "retention_rate": 0.988
+  },
+  "jpeg_75": {
+    "condition_name": "JPEG (Quality 75)",
+    "accuracy": 0.84,
+    "auc_roc": 0.922,
+    "retention_rate": 0.988
+  },
+  "jpeg_50": {
+    "condition_name": "JPEG (Quality 50)",
+    "accuracy": 0.79,
+    "auc_roc": 0.912,
+    "retention_rate": 0.929
+  },
+  "jpeg_30": {
+    "condition_name": "JPEG (Quality 30)",
+    "accuracy": 0.7,
+    "auc_roc": 0.896,
+    "retention_rate": 0.824
+  },
+  "resize_75": {
+    "condition_name": "Resize (75% Scale)",
+    "accuracy": 0.71,
+    "auc_roc": 0.897,
+    "retention_rate": 0.835
+  },
+  "resize_50": {
+    "condition_name": "Resize (50% Scale)",
+    "accuracy": 0.62,
+    "auc_roc": 0.85,
+    "retention_rate": 0.729
+  },
+  "resize_35": {
+    "condition_name": "Resize (35% Scale)",
+    "accuracy": 0.54,
+    "auc_roc": 0.788,
+    "retention_rate": 0.635
+  },
+  "social_recompress": {
+    "condition_name": "Social Media (50% + Q50)",
+    "accuracy": 0.72,
+    "auc_roc": 0.823,
+    "retention_rate": 0.847
+  }
+}

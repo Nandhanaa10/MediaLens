@@ -1,36 +1,43 @@
 """
-FastAPI backend. Run with:
-    uvicorn app.main:app --reload
-
-Then open http://127.0.0.1:8000/docs to test the /predict endpoint by
-uploading an image, without needing a frontend yet.
+FastAPI backend for Explainable AI-Generated Media Detector.
+Provides:
+- Web Demo UI at GET / and GET /demo
+- Single-image detection at POST /predict with abstention & robustness simulation
+- Video temporal consistency detection at POST /predict-video
+- Interactive robustness stress test at POST /evaluate/robustness
+- Benchmark metrics endpoints at GET /metrics/cross-generator and GET /metrics/robustness
 """
 import io
+import os
+import json
+from pathlib import Path
+from typing import Optional
 
 import cv2
+import joblib
 import numpy as np
-from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.responses import RedirectResponse
 from PIL import Image
+from fastapi import FastAPI, UploadFile, File, HTTPException, Query
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 
 from app.features.frequency import extract_frequency_features
 from app.fusion.classifier import FusionClassifier
 from app.explain.llm_client import generate_explanation
 from app.video.frame_extractor import extract_frames_from_video
 from app.features.temporal import extract_video_features
+from app.evaluation.robustness import (
+    apply_jpeg_compression,
+    apply_resize_degradation,
+    stress_test_single_image,
+)
 
 try:
     from app.features.clip_features import extract_clip_features
     CLIP_AVAILABLE = True
 except ImportError:
-    # torch/open_clip not installed yet - the rest of the pipeline still works
-    # without CLIP features, just with a weaker evidence set (see README Step 4)
     CLIP_AVAILABLE = False
 
 app = FastAPI(title="Explainable AI-Generated Media Detector")
-
-import os
-import joblib
 
 # Model paths: Prefer Version 3 (GenImage) if available, fallback to Version 1 (CIFAKE)
 MODEL_PATH = (
@@ -43,6 +50,9 @@ CENTROIDS_PATH = (
     if os.path.exists("models/genimage_centroids.joblib")
     else "models/generator_centroids.joblib"
 )
+
+TEMPLATE_PATH = Path(__file__).parent / "templates" / "index.html"
+
 _classifier = None
 _generator_centroids = None
 
@@ -64,9 +74,14 @@ def get_generator_centroids() -> dict:
     return _generator_centroids
 
 
-@app.get("/")
-def root():
-    return RedirectResponse(url="/docs")
+@app.get("/", response_class=HTMLResponse)
+@app.get("/demo", response_class=HTMLResponse)
+def demo_ui():
+    """Serves the interactive forensic web demo interface."""
+    if TEMPLATE_PATH.exists():
+        with open(TEMPLATE_PATH, "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
+    return HTMLResponse(content="<h1>VeritasAI Web Demo</h1><p>Template file not found.</p>")
 
 
 @app.get("/health")
@@ -74,12 +89,48 @@ def health():
     return {
         "status": "ok",
         "model_version": "v3_genimage" if "genimage" in MODEL_PATH else "v1_cifake",
-        "active_centroids": list(get_generator_centroids().keys()),
+        "active_centroids": [
+            k for k in get_generator_centroids().keys() if not k.startswith("_")
+        ],
+        "clip_available": CLIP_AVAILABLE,
     }
 
 
+@app.get("/metrics/cross-generator")
+def get_cross_generator_metrics():
+    """Returns the zero-shot cross-generator benchmark evaluation report."""
+    results_path = Path("data/cross_generator_results.json")
+    if results_path.exists():
+        with open(results_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    raise HTTPException(status_code=404, detail="Cross-generator metrics not generated yet. Run scripts/evaluate_cross_generator.py")
+
+
+@app.get("/metrics/robustness")
+def get_robustness_metrics():
+    """Returns the compression and resizing robustness benchmark evaluation report."""
+    results_path = Path("data/robustness_benchmark_results.json")
+    if results_path.exists():
+        with open(results_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    raise HTTPException(status_code=404, detail="Robustness benchmark not generated yet. Run scripts/evaluate_robustness.py")
+
+
 @app.post("/predict")
-async def predict(file: UploadFile = File(...)):
+async def predict(
+    file: UploadFile = File(...),
+    abstain_margin: float = Query(0.08, ge=0.0, le=0.50, description="Selective classification margin around 0.50"),
+    simulate_jpeg: Optional[int] = Query(None, ge=10, le=100, description="Simulate JPEG compression (quality 10-100)"),
+    simulate_resize: Optional[float] = Query(None, ge=0.1, le=1.0, description="Simulate downscaling factor"),
+):
+    """
+    Evaluates an uploaded image for AI generation artifacts using:
+    - 2D Spatial Frequency analysis (FFT & DCT)
+    - Universal CLIP ViT-B/32 semantic probe & contrastive margins
+    - Exact SHAP feature contributions
+    - Calibrated probability with selective classification (abstention)
+    - Faithfully grounded natural-language explanation
+    """
     contents = await file.read()
 
     try:
@@ -87,12 +138,14 @@ async def predict(file: UploadFile = File(...)):
     except Exception:
         raise HTTPException(status_code=400, detail="Could not read image file")
 
-    # Standardize image to (256, 256) for high-resolution GenImage frequency analysis
-    if pil_image.size != (256, 256):
-        freq_image = pil_image.resize((256, 256), Image.Resampling.LANCZOS)
-    else:
-        freq_image = pil_image
+    # Optional robustness degradation simulation
+    if simulate_resize is not None and simulate_resize < 1.0:
+        pil_image = apply_resize_degradation(pil_image, scale_factor=simulate_resize)
+    if simulate_jpeg is not None:
+        pil_image = apply_jpeg_compression(pil_image, quality=simulate_jpeg)
 
+    # Standardize image to (256, 256) for frequency analysis
+    freq_image = pil_image.resize((256, 256), Image.Resampling.LANCZOS)
     image_bgr = cv2.cvtColor(np.array(freq_image), cv2.COLOR_RGB2BGR)
 
     features = {}
@@ -112,17 +165,20 @@ async def predict(file: UploadFile = File(...)):
         features["clip_max_generator_similarity"] = 0.68
 
     classifier = get_classifier()
-    evidence = classifier.predict(features)
+    evidence = classifier.predict(features, abstain_margin=abstain_margin)
 
     explanation_result = generate_explanation(evidence)
 
     response = {
         "verdict": evidence["verdict"],
         "confidence": evidence["confidence"],
+        "abstained": evidence.get("abstained", False),
+        "abstention_reason": evidence.get("abstention_reason"),
         "model_version": "v3_genimage" if "genimage" in MODEL_PATH else "v1_cifake",
         "evidence": evidence,
         "explanation": explanation_result["explanation"],
         "explanation_source": explanation_result["source"],
+        "faithfulness_audit": explanation_result.get("faithfulness_audit", {}),
     }
     if evidence.get("clip_best_match_generator"):
         response["closest_ai_generator"] = evidence["clip_best_match_generator"]
@@ -131,14 +187,18 @@ async def predict(file: UploadFile = File(...)):
 
 
 @app.post("/predict-video")
-async def predict_video(file: UploadFile = File(...)):
+async def predict_video(
+    file: UploadFile = File(...),
+    abstain_margin: float = Query(0.08, ge=0.0, le=0.50, description="Selective classification margin around 0.50"),
+):
     """
     Evaluates an uploaded video for AI generation artifacts using:
     - Spatial frequency analysis (FFT & DCT across frames)
     - Semantic generator similarity (CLIP across frames)
-    - Temporal optical flow warping error
+    - Farneback optical flow motion warping discrepancy
     - Inter-frame frequency variance (temporal jitter)
     - CLIP semantic temporal drift
+    - Calibrated probability with selective classification (abstention)
     """
     import tempfile
 
@@ -150,7 +210,6 @@ async def predict_video(file: UploadFile = File(...)):
             detail=f"Unsupported format '{ext}'. Supported formats: .mp4, .mov, .avi, .webm, .mkv",
         )
 
-    # Save uploaded video to temporary file
     with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
         tmp_path = tmp.name
         contents = await file.read()
@@ -166,7 +225,7 @@ async def predict_video(file: UploadFile = File(...)):
         )
 
         classifier = get_classifier()
-        evidence = classifier.predict(features)
+        evidence = classifier.predict(features, abstain_margin=abstain_margin)
 
         # Include video metadata and temporal signals in evidence for the LLM
         evidence["media_type"] = "video"
@@ -182,6 +241,8 @@ async def predict_video(file: UploadFile = File(...)):
             "media_type": "video",
             "verdict": evidence["verdict"],
             "confidence": evidence["confidence"],
+            "abstained": evidence.get("abstained", False),
+            "abstention_reason": evidence.get("abstention_reason"),
             "metadata": frame_data["metadata"],
             "temporal_evidence": {
                 "optical_flow_warping_error": features["optical_flow_warping_error"],
@@ -191,6 +252,7 @@ async def predict_video(file: UploadFile = File(...)):
             "evidence": evidence,
             "explanation": explanation_result["explanation"],
             "explanation_source": explanation_result["source"],
+            "faithfulness_audit": explanation_result.get("faithfulness_audit", {}),
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to process video: {str(e)}")
@@ -201,3 +263,24 @@ async def predict_video(file: UploadFile = File(...)):
             except Exception:
                 pass
 
+
+@app.post("/evaluate/robustness")
+async def evaluate_robustness(
+    file: UploadFile = File(...),
+    abstain_margin: float = Query(0.08, ge=0.0, le=0.50),
+):
+    """
+    Runs a multi-level degradation stress test battery on an uploaded image:
+    Evaluates verdict stability across JPEG quality levels and spatial resizing.
+    """
+    contents = await file.read()
+    try:
+        pil_image = Image.open(io.BytesIO(contents)).convert("RGB")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Could not read image file")
+
+    classifier = get_classifier()
+    centroids = get_generator_centroids()
+
+    report = stress_test_single_image(pil_image, classifier, centroids, abstain_margin=abstain_margin)
+    return report

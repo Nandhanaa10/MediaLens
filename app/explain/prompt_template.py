@@ -18,9 +18,9 @@ STRICT RULES:
    plainly, without embellishment.
 3. Every claim you make must be traceable to a specific field and value below.
 4. If a field is not present or its value is near zero/neutral, do not mention it.
-5. Do not speculate about the generator, artist, or subject beyond what evidence_labels
-   explicitly states.
-6. Output ONLY the explanation text. No preamble, no headers, no markdown."""
+5. If verdict is 'uncertain' or 'abstained', state that the model withheld judgment due to borderline signals.
+6. Do not speculate about the generator, artist, or subject beyond what evidence explicitly states.
+7. Output ONLY the explanation text. No preamble, no headers, no markdown."""
 
 FEWSHOT_USER = """Evidence record:
 - verdict: AI-generated
@@ -33,6 +33,19 @@ Write the explanation now, following all rules above."""
 
 FEWSHOT_ASSISTANT = """The image was classified as AI-generated with 97% confidence.
 The strongest signal was a high semantic anomaly score (0.92) indicating alignment with synthetic generator embeddings. Frequency-domain analysis also exhibited characteristic high-frequency artifacts (0.45), reinforcing the verdict."""
+
+FEWSHOT_ABSTAIN_USER = """Evidence record:
+- verdict: uncertain
+- confidence: 0.85
+- abstained: True
+- calibrated_prob_ai: 0.485
+- clip_semantic_score: 0.49
+- fft_anomaly_score: 0.42
+- top_evidence: ["clip_semantic_score", "fft_anomaly_score"]
+
+Write the explanation now, following all rules above."""
+
+FEWSHOT_ABSTAIN_ASSISTANT = """The detector abstained from a definitive verdict, classifying the media as uncertain. The calibrated probability (0.485) falls within the decision margin as both semantic consistency (0.49) and frequency features (0.42) are borderline. Manual forensic review is recommended."""
 
 FEWSHOT_VIDEO_USER = """Evidence record:
 - media_type: video
@@ -54,8 +67,12 @@ def format_evidence_for_prompt(evidence: dict) -> str:
     lines = [f"- verdict: {evidence['verdict']}", f"- confidence: {evidence['confidence']}"]
     if "media_type" in evidence:
         lines.append(f"- media_type: {evidence['media_type']}")
+    if evidence.get("abstained"):
+        lines.append("- abstained: True")
+    if "calibrated_prob_ai" in evidence:
+        lines.append(f"- calibrated_prob_ai: {evidence['calibrated_prob_ai']}")
     for key, value in evidence.items():
-        if key in ("verdict", "confidence", "top_evidence", "media_type"):
+        if key in ("verdict", "confidence", "top_evidence", "media_type", "abstained", "calibrated_prob_ai", "raw_prob_ai", "abstain_margin", "abstention_reason"):
             continue
         if isinstance(value, dict) and "value" in value:
             lines.append(f"- {key}: {value['value']}")
@@ -68,10 +85,18 @@ def format_evidence_for_prompt(evidence: dict) -> str:
 
 def build_messages(evidence: dict) -> list:
     is_video = evidence.get("media_type") == "video"
+    is_abstain = evidence.get("abstained", False) or evidence.get("verdict") == "uncertain"
     user_prompt = f"Evidence record:\n{format_evidence_for_prompt(evidence)}\n\nWrite the explanation now, following all rules above."
-    
-    fewshot_u = FEWSHOT_VIDEO_USER if is_video else FEWSHOT_USER
-    fewshot_a = FEWSHOT_VIDEO_ASSISTANT if is_video else FEWSHOT_ASSISTANT
+
+    if is_abstain:
+        fewshot_u = FEWSHOT_ABSTAIN_USER
+        fewshot_a = FEWSHOT_ABSTAIN_ASSISTANT
+    elif is_video:
+        fewshot_u = FEWSHOT_VIDEO_USER
+        fewshot_a = FEWSHOT_VIDEO_ASSISTANT
+    else:
+        fewshot_u = FEWSHOT_USER
+        fewshot_a = FEWSHOT_ASSISTANT
 
     return [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -83,11 +108,13 @@ def build_messages(evidence: dict) -> list:
 
 if __name__ == "__main__":
     example_evidence = {
-        "verdict": "AI-generated",
-        "confidence": 0.945,
-        "fft_anomaly_score": {"value": 0.79, "contribution": 0.36},
-        "clip_max_generator_similarity": {"value": 0.81, "contribution": 2.05},
-        "top_evidence": ["clip_max_generator_similarity", "fft_anomaly_score"],
+        "verdict": "uncertain",
+        "confidence": 0.82,
+        "abstained": True,
+        "calibrated_prob_ai": 0.49,
+        "clip_semantic_score": {"value": 0.51, "contribution": 0.12},
+        "fft_anomaly_score": {"value": 0.40, "contribution": -0.05},
+        "top_evidence": ["clip_semantic_score", "fft_anomaly_score"],
     }
     for m in build_messages(example_evidence):
         print(f"[{m['role']}]\n{m['content']}\n")

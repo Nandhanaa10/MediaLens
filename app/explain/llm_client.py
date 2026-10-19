@@ -1,12 +1,7 @@
 """
-Calls a free-tier LLM (Gemini's free tier is the easiest to get working
-quickly - https://ai.google.dev/, click "Get API key"), and runs the
-faithfulness verification step from the design doc: reject and fall back
-to a deterministic template if the draft mentions anything not traceable
-to the evidence dict.
-
-Set your API key as an environment variable before running:
-    export GEMINI_API_KEY="your-key-here"
+Calls Gemini 3.8 Flash for evidence explanation and runs a strict multi-stage
+faithfulness verification check: reject and fall back to a deterministic template
+if the draft invents numbers, contradicts the verdict direction, or quotes ungrounded claims.
 """
 import os
 import re
@@ -42,7 +37,6 @@ def call_gemini(messages: list) -> str:
         }
 
         try:
-            print(f"Requesting explanation from {model}...")
             response = requests.post(
                 url,
                 json={
@@ -67,8 +61,7 @@ def call_gemini(messages: list) -> str:
 
 
 def _numeric_tokens_in_evidence(evidence: dict) -> set:
-    """Collects every numeric value present in the evidence dict, rounded to
-    a couple of formats, so we can check the draft doesn't invent new numbers."""
+    """Collects every numeric value present in the evidence dict in standard formats."""
     tokens = set()
     for key, value in evidence.items():
         if isinstance(value, dict):
@@ -77,13 +70,14 @@ def _numeric_tokens_in_evidence(evidence: dict) -> set:
                     tokens.add(str(sub_v))
                     tokens.add(str(round(sub_v, 2)))
                     tokens.add(str(round(sub_v, 3)))
+                    tokens.add(str(round(sub_v, 4)))
                     tokens.add(str(int(round(sub_v * 100))))
                     tokens.add(str(round(sub_v * 100, 1)))
         elif isinstance(value, (int, float)):
             tokens.add(str(value))
             tokens.add(str(round(value, 2)))
             tokens.add(str(round(value, 3)))
-            # Add both floor, ceil, round for percentages (e.g. 0.945 -> 94, 95, 94.5)
+            tokens.add(str(round(value, 4)))
             pct = value * 100
             tokens.add(str(int(round(pct))))
             tokens.add(str(int(pct)))
@@ -93,39 +87,81 @@ def _numeric_tokens_in_evidence(evidence: dict) -> set:
     return tokens
 
 
-def verify_explanation(draft: str, evidence: dict) -> bool:
+def verify_explanation(draft: str, evidence: dict) -> dict:
     """
-    A deliberately simple, transparent check (see Part 9 - this is a real
-    limitation, not a fully solved problem): every numeric figure quoted in
-    the draft must appear somewhere in the evidence dict. This catches the
-    most damaging failure mode - the model inventing a percentage or score -
-    even though it won't catch every possible subtle misdescription.
+    Multi-stage faithfulness verification audit:
+    1. Numeric grounding: Draft must not invent ungrounded percentages or metrics.
+    2. Directional consistency: Draft must align with the classified verdict.
+    3. Abstention consistency: If abstained, draft must convey uncertainty.
     """
     evidence_numbers = _numeric_tokens_in_evidence(evidence)
     numbers_in_draft = re.findall(r"\d+\.?\d*", draft)
+    verdict = str(evidence.get("verdict", "")).lower()
 
-    for number in numbers_in_draft:
-        # Ignore structural counters like 1, 2, 3 (e.g. "2 factors", "top 2 signals")
-        if number in ("1", "2", "3") and number not in evidence_numbers:
+    # 1. Numeric audit
+    numeric_passed = True
+    ungrounded_tokens = []
+    for num in numbers_in_draft:
+        # Ignore structural sequence numbers like 1, 2, 3
+        if num in ("1", "2", "3") and num not in evidence_numbers:
             continue
-        if number not in evidence_numbers:
-            print(f"[Verification Info] Token '{number}' in draft was not found in evidence numbers: {evidence_numbers}")
-            return False
-    return True
+        if num not in evidence_numbers:
+            numeric_passed = False
+            ungrounded_tokens.append(num)
+
+    # 2. Directional audit
+    draft_lower = draft.lower()
+    directional_passed = True
+    if verdict == "ai-generated":
+        if "authentic" in draft_lower or "real photograph" in draft_lower:
+            directional_passed = False
+    elif verdict == "real":
+        if "synthetic" in draft_lower or "ai-generated" in draft_lower:
+            directional_passed = False
+    elif verdict in ("uncertain", "abstain"):
+        if not ("uncertain" in draft_lower or "abstained" in draft_lower or "borderline" in draft_lower or "inconclusive" in draft_lower):
+            directional_passed = False
+
+    passed = numeric_passed and directional_passed
+    details = (
+        "All numerical and directional claims verified against evidence."
+        if passed
+        else f"Failed audit: ungrounded_numbers={ungrounded_tokens}, directional_ok={directional_passed}"
+    )
+
+    return {
+        "passed": passed,
+        "numeric_audit_passed": numeric_passed,
+        "directional_audit_passed": directional_passed,
+        "ungrounded_tokens": ungrounded_tokens,
+        "details": details,
+    }
 
 
 def fallback_template(evidence: dict) -> str:
     """Deterministic, guaranteed-grounded explanation built from the top SHAP-ranked evidence."""
+    verdict = evidence.get("verdict", "unknown")
+    conf_pct = int(round(evidence.get("confidence", 0.5) * 100))
+    media_subject = "Video" if evidence.get("media_type") == "video" else "Image"
+
     top_fields = evidence.get("top_evidence", [])
     parts = []
     for field in top_fields:
-        value = evidence[field]["value"] if isinstance(evidence[field], dict) else evidence[field]
-        parts.append(f"{field.replace('_', ' ')} of {value}")
-    joined = " and ".join(parts) if parts else "the combined evidence signals"
-    media_subject = "Video classified" if evidence.get("media_type") == "video" else "Classified"
+        val = evidence[field]["value"] if isinstance(evidence.get(field), dict) else evidence.get(field)
+        if val is not None:
+            parts.append(f"{field.replace('_', ' ')} ({val})")
+    joined = " and ".join(parts) if parts else "all combined forensic signals"
+
+    if verdict == "uncertain" or evidence.get("abstained"):
+        return (
+            f"{media_subject} evaluation resulted in an abstention (uncertain verdict) "
+            f"with calibrated probability of {evidence.get('calibrated_prob_ai', 0.50):.3f}. "
+            f"Forensic indicators ({joined}) are borderline. Manual verification is advised."
+        )
+
     return (
-        f"{media_subject} as {evidence['verdict']} with {evidence['confidence']*100:.0f}% "
-        f"confidence, based on {joined}."
+        f"{media_subject} classified as {verdict} with {conf_pct}% "
+        f"confidence, primarily driven by {joined}."
     )
 
 
@@ -133,23 +169,38 @@ def generate_explanation(evidence: dict) -> dict:
     messages = build_messages(evidence)
     try:
         draft = call_gemini(messages)
+        audit = verify_explanation(draft, evidence)
+        if audit["passed"]:
+            return {
+                "explanation": draft,
+                "source": "llm_verified",
+                "faithfulness_audit": audit,
+            }
+        else:
+            return {
+                "explanation": fallback_template(evidence),
+                "source": "fallback",
+                "faithfulness_audit": audit,
+            }
     except Exception as e:
-        return {"explanation": fallback_template(evidence), "source": "fallback", "reason": str(e)}
-
-    print(f"\n[LLM Generated Draft]:\n\"{draft}\"\n")
-
-    if verify_explanation(draft, evidence):
-        return {"explanation": draft, "source": "llm_verified"}
-    else:
-        return {"explanation": fallback_template(evidence), "source": "fallback", "reason": "verification_failed"}
+        return {
+            "explanation": fallback_template(evidence),
+            "source": "fallback",
+            "faithfulness_audit": {
+                "passed": False,
+                "numeric_audit_passed": False,
+                "directional_audit_passed": True,
+                "details": f"Gemini API unavailable or errored ({str(e)}). Used deterministic fallback.",
+            },
+        }
 
 
 if __name__ == "__main__":
     example_evidence = {
         "verdict": "AI-generated",
         "confidence": 0.945,
+        "clip_semantic_score": {"value": 0.81, "contribution": 2.05},
         "fft_anomaly_score": {"value": 0.79, "contribution": 0.36},
-        "clip_max_generator_similarity": {"value": 0.81, "contribution": 2.05},
-        "top_evidence": ["clip_max_generator_similarity", "fft_anomaly_score"],
+        "top_evidence": ["clip_semantic_score", "fft_anomaly_score"],
     }
     print(generate_explanation(example_evidence))

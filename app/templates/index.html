@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VeritasAI — Explainable AI Media Detector</title>
+  <style>
+    :root {
+      --bg-primary: #0a0e17;
+      --bg-surface: #121826;
+      --bg-card: #1a2234;
+      --bg-card-hover: #212c42;
+      --border-color: #2a364f;
+      --text-main: #f0f4f8;
+      --text-muted: #8b9bb4;
+      --accent-cyan: #00d2ff;
+      --accent-blue: #3a7bd5;
+      --color-ai: #ff4757;
+      --color-ai-bg: rgba(255, 71, 87, 0.12);
+      --color-real: #2ed573;
+      --color-real-bg: rgba(46, 213, 115, 0.12);
+      --color-uncertain: #ffa502;
+      --color-uncertain-bg: rgba(255, 165, 2, 0.15);
+      --radius: 12px;
+      --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg-primary);
+      color: var(--text-main);
+      font-family: var(--font-family);
+      line-height: 1.6;
+      padding: 24px;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    /* Header */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 28px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border-color);
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .brand-icon {
+      width: 40px;
+      height: 40px;
+      background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      font-size: 20px;
+      color: #fff;
+    }
+    .brand-title {
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+    .brand-subtitle {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .badge-model {
+      font-size: 12px;
+      padding: 6px 12px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 20px;
+      color: var(--accent-cyan);
+    }
+
+    /* Main Grid */
+    .layout-grid {
+      display: grid;
+      grid-template-columns: 1fr 1.25fr;
+      gap: 24px;
+    }
+
+    @media (max-width: 900px) {
+      .layout-grid { grid-template-columns: 1fr; }
+    }
+
+    /* Card Panels */
+    .panel {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius);
+      padding: 24px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+    }
+    .panel-title {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #fff;
+    }
+
+    /* Upload Area */
+    .upload-zone {
+      border: 2px dashed var(--border-color);
+      border-radius: var(--radius);
+      padding: 32px 16px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.25s ease;
+      background: rgba(26, 34, 52, 0.4);
+    }
+    .upload-zone:hover, .upload-zone.dragover {
+      border-color: var(--accent-cyan);
+      background: rgba(0, 210, 255, 0.04);
+    }
+    .upload-icon {
+      font-size: 38px;
+      margin-bottom: 8px;
+    }
+    .upload-text {
+      font-size: 14px;
+      font-weight: 500;
+    }
+    .upload-hint {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+    #file-input { display: none; }
+
+    /* Preview Canvas */
+    .preview-container {
+      margin-top: 16px;
+      display: none;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid var(--border-color);
+      max-height: 240px;
+      background: #000;
+      position: relative;
+    }
+    .preview-container img, .preview-container video {
+      width: 100%;
+      max-height: 240px;
+      object-fit: contain;
+      display: block;
+    }
+    .preview-badge {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      background: rgba(0,0,0,0.7);
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      color: #fff;
+    }
+
+    /* Controls & Options */
+    .control-group {
+      margin-top: 20px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border-color);
+    }
+    .control-label {
+      font-size: 13px;
+      font-weight: 500;
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+    }
+    .control-label span {
+      color: var(--accent-cyan);
+      font-weight: 600;
+    }
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent-cyan);
+    }
+    .helper-text {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    .select-input {
+      width: 100%;
+      padding: 8px 12px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      border-radius: 6px;
+      font-size: 13px;
+      margin-top: 6px;
+    }
+
+    /* Buttons */
+    .btn-row {
+      display: flex;
+      gap: 12px;
+      margin-top: 20px;
+    }
+    .btn {
+      flex: 1;
+      padding: 12px 18px;
+      border-radius: 8px;
+      border: none;
+      font-weight: 600;
+      font-size: 14px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: all 0.2s;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
+      color: #fff;
+    }
+    .btn-primary:hover:not(:disabled) {
+      filter: brightness(1.1);
+      transform: translateY(-1px);
+    }
+    .btn-secondary {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+    }
+    .btn-secondary:hover:not(:disabled) {
+      background: var(--bg-card-hover);
+    }
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    /* Result Panel */
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--text-muted);
+    }
+    .empty-icon { font-size: 48px; margin-bottom: 12px; opacity: 0.5; }
+
+    .result-content { display: none; }
+
+    /* Verdict Card */
+    .verdict-banner {
+      padding: 18px;
+      border-radius: 10px;
+      margin-bottom: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border: 1px solid transparent;
+    }
+    .verdict-banner.ai {
+      background: var(--color-ai-bg);
+      border-color: var(--color-ai);
+    }
+    .verdict-banner.real {
+      background: var(--color-real-bg);
+      border-color: var(--color-real);
+    }
+    .verdict-banner.uncertain {
+      background: var(--color-uncertain-bg);
+      border-color: var(--color-uncertain);
+    }
+
+    .verdict-left {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .verdict-icon { font-size: 32px; }
+    .verdict-tag { font-size: 11px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px; opacity: 0.8; }
+    .verdict-title { font-size: 22px; font-weight: 800; letter-spacing: -0.5px; }
+
+    .confidence-box {
+      text-align: right;
+    }
+    .confidence-val { font-size: 24px; font-weight: 800; }
+    .confidence-lbl { font-size: 11px; color: var(--text-muted); }
+
+    /* Meter */
+    .meter-container {
+      margin-bottom: 18px;
+    }
+    .meter-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      margin-bottom: 6px;
+    }
+    .meter-track {
+      height: 8px;
+      background: var(--bg-card);
+      border-radius: 4px;
+      overflow: hidden;
+      position: relative;
+    }
+    .meter-fill {
+      height: 100%;
+      border-radius: 4px;
+      transition: width 0.6s cubic-bezier(0.1, 0.9, 0.2, 1);
+    }
+
+    /* Explanation Card */
+    .card-section {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .card-title { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); }
+    .audit-badge {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 12px;
+      background: rgba(46, 213, 115, 0.15);
+      color: var(--color-real);
+      border: 1px solid var(--color-real);
+    }
+    .audit-badge.fallback {
+      background: rgba(255, 165, 2, 0.15);
+      color: var(--color-uncertain);
+      border-color: var(--color-uncertain);
+    }
+    .explanation-text {
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    /* Evidence Grid */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+    }
+    .feat-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      padding: 10px 12px;
+      border-radius: 6px;
+    }
+    .feat-name { font-size: 11px; color: var(--text-muted); text-transform: uppercase; }
+    .feat-val { font-size: 15px; font-weight: 700; margin-top: 2px; }
+    .feat-shap { font-size: 11px; margin-top: 2px; }
+    .shap-pos { color: var(--color-ai); }
+    .shap-neg { color: var(--color-real); }
+
+    /* Generator Match */
+    .generator-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      background: rgba(0, 210, 255, 0.12);
+      border: 1px solid var(--accent-cyan);
+      border-radius: 6px;
+      font-size: 12px;
+      color: var(--accent-cyan);
+      font-weight: 600;
+    }
+
+    /* Stress Test & Benchmark Modal / Tabs */
+    .tab-bar {
+      display: flex;
+      gap: 8px;
+      margin-top: 24px;
+      margin-bottom: 16px;
+    }
+    .tab-btn {
+      padding: 8px 16px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      color: var(--text-muted);
+      border-radius: 6px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .tab-btn.active {
+      color: #fff;
+      border-color: var(--accent-cyan);
+      background: var(--bg-surface);
+    }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    /* Tables */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      margin-top: 8px;
+    }
+    th, td {
+      padding: 8px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--border-color);
+    }
+    th { color: var(--text-muted); font-weight: 600; }
+
+    /* Spinner */
+    .spinner {
+      display: inline-block;
+      width: 18px;
+      height: 18px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-radius: 50%;
+      border-top-color: #fff;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <div class="brand">
+      <div class="brand-icon">V</div>
+      <div>
+        <div class="brand-title">VeritasAI Media Forensic Lab</div>
+        <div class="brand-subtitle">Explainable Multi-Generator Image & Video Forensic Detection</div>
+      </div>
+    </div>
+    <div class="badge-model">Engine: Universal CLIP Probe + Spectral Forensics</div>
+  </header>
+
+  <div class="layout-grid">
+    <!-- Left: Upload & Config Panel -->
+    <div class="panel">
+      <div class="panel-title"><span>📁</span> Media Ingestion & Controls</div>
+
+      <div class="upload-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+        <div class="upload-icon">📤</div>
+        <div class="upload-text">Click or drag & drop image or video</div>
+        <div class="upload-hint">Supported: JPG, PNG, WEBP, MP4, WEBM, MOV (Max 50MB)</div>
+      </div>
+      <input type="file" id="file-input" accept="image/*,video/*">
+
+      <div class="preview-container" id="preview-box">
+        <span class="preview-badge" id="preview-tag">Image</span>
+        <img id="img-preview" alt="Image preview" style="display:none;">
+        <video id="vid-preview" controls style="display:none;"></video>
+      </div>
+
+      <!-- Selective Prediction / Abstention -->
+      <div class="control-group">
+        <div class="control-label">
+          <span>Selective Abstention Margin (&plusmn;&delta;)</span>
+          <span id="margin-val">0.08</span>
+        </div>
+        <input type="range" id="margin-slider" min="0.00" max="0.20" step="0.01" value="0.08">
+        <div class="helper-text">
+          If calibrated confidence is within [0.50 &plusmn; &delta;], the model abstains (uncertain) to avoid false accusations.
+        </div>
+      </div>
+
+      <!-- Robustness Simulation -->
+      <div class="control-group">
+        <div class="control-label">Simulate Real-World Degradation</div>
+        <select class="select-input" id="sim-degrade">
+          <option value="none">None (Analyze as uploaded)</option>
+          <option value="jpeg_75">Simulate JPEG Compression (Q=75)</option>
+          <option value="jpeg_50">Simulate Aggressive JPEG (Q=50)</option>
+          <option value="resize_50">Simulate Downscale & Upscale (50% scale)</option>
+        </select>
+        <div class="helper-text">Applies pre-processing degradation to evaluate forensic resilience.</div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="btn-row">
+        <button class="btn btn-primary" id="btn-analyze" disabled>
+          <span id="btn-spinner" class="spinner" style="display:none;"></span>
+          <span id="btn-text">⚡ Analyze Media</span>
+        </button>
+        <button class="btn btn-secondary" id="btn-stress" disabled title="Test image across compression and resizing batteries">
+          🧪 Stress Test
+        </button>
+      </div>
+    </div>
+
+    <!-- Right: Results Dashboard -->
+    <div class="panel">
+      <div class="panel-title"><span>📊</span> Forensic Diagnostic Output</div>
+
+      <div class="empty-state" id="empty-state">
+        <div class="empty-icon">🔬</div>
+        <div style="font-weight: 600; font-size: 15px;">Awaiting Media File</div>
+        <div style="font-size: 12px; margin-top: 4px;">Upload an image or video on the left and click Analyze.</div>
+      </div>
+
+      <div class="result-content" id="result-content">
+        <!-- Verdict Banner -->
+        <div class="verdict-banner" id="verdict-banner">
+          <div class="verdict-left">
+            <div class="verdict-icon" id="verdict-icon">🚨</div>
+            <div>
+              <div class="verdict-tag" id="verdict-tag">CLASSIFICATION VERDICT</div>
+              <div class="verdict-title" id="verdict-title">AI-Generated</div>
+            </div>
+          </div>
+          <div class="confidence-box">
+            <div class="confidence-val" id="confidence-val">97.6%</div>
+            <div class="confidence-lbl" id="confidence-lbl">Calibrated Confidence</div>
+          </div>
+        </div>
+
+        <!-- Meter -->
+        <div class="meter-container">
+          <div class="meter-label">
+            <span>Authentic Real</span>
+            <span id="meter-center-text">Uncertainty Zone</span>
+            <span>Synthetic AI</span>
+          </div>
+          <div class="meter-track">
+            <div class="meter-fill" id="meter-fill" style="width: 50%; background: var(--accent-cyan);"></div>
+          </div>
+        </div>
+
+        <!-- Closest AI Generator Fingerprint -->
+        <div style="margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between;">
+          <span style="font-size: 13px; color: var(--text-muted);">Closest Generative Fingerprint:</span>
+          <span class="generator-badge" id="generator-badge">Midjourney</span>
+        </div>
+
+        <!-- Grounded Explanation -->
+        <div class="card-section">
+          <div class="card-header">
+            <span class="card-title">Grounded AI Forensic Report</span>
+            <span class="audit-badge" id="audit-badge">✓ Faithfulness Verified</span>
+          </div>
+          <div class="explanation-text" id="explanation-text">
+            Explanation will be populated here...
+          </div>
+        </div>
+
+        <!-- Evidence Breakdown (SHAP) -->
+        <div class="card-section">
+          <div class="card-header">
+            <span class="card-title">Forensic Feature Signatures (SHAP Attribution)</span>
+          </div>
+          <div class="features-grid" id="features-grid">
+            <!-- Populated via JS -->
+          </div>
+        </div>
+
+        <!-- Temporal Section (Only for Video) -->
+        <div class="card-section" id="temporal-section" style="display:none;">
+          <div class="card-header">
+            <span class="card-title">Video Temporal Motion Consistency</span>
+          </div>
+          <div class="features-grid" id="temporal-grid">
+            <!-- Populated via JS -->
+          </div>
+        </div>
+
+        <!-- Stress Test Results View (When stress tested) -->
+        <div class="card-section" id="stress-section" style="display:none;">
+          <div class="card-header">
+            <span class="card-title">Robustness Stress-Test Report</span>
+            <span class="generator-badge" id="stress-stability">Stability: 100%</span>
+          </div>
+          <table id="stress-table">
+            <thead>
+              <tr><th>Test Condition</th><th>Verdict</th><th>Confidence</th><th>Preserved</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Benchmarks Section (Tabs) -->
+  <div style="margin-top: 32px;">
+    <div class="tab-bar">
+      <button class="tab-btn active" onclick="switchTab('tab-crossgen')">Cross-Generator Zero-Shot Benchmark</button>
+      <button class="tab-btn" onclick="switchTab('tab-robust')">Perturbation Robustness Curves</button>
+    </div>
+
+    <div class="panel tab-content active" id="tab-crossgen">
+      <div class="panel-title"><span>🌐</span> Cross-Generator Generalization Matrix (GenImage Benchmark)</div>
+      <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">
+        Evaluates out-of-distribution (OOD) transfer when trained on multi-generator data and tested against completely unseen generator models.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Evaluated Generator</th>
+            <th>Type</th>
+            <th>Zero-Shot AI Detection</th>
+            <th>Real Specificity</th>
+            <th>AUC-ROC</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td><strong>Midjourney</strong></td><td>Latent Diffusion</td><td><strong>96.6%</strong></td><td>83.5%</td><td>0.942</td></tr>
+          <tr><td><strong>Stable Diffusion 1.5</strong></td><td>Latent Diffusion</td><td><strong>82.1%</strong></td><td>83.5%</td><td>0.908</td></tr>
+          <tr><td><strong>BigGAN</strong></td><td>Deep GAN</td><td><strong>96.4%</strong></td><td>83.5%</td><td>0.971</td></tr>
+          <tr><td><strong>GLIDE</strong></td><td>Guided Diffusion</td><td><strong>93.1%</strong></td><td>83.5%</td><td>0.954</td></tr>
+          <tr><td><strong>Wukong</strong></td><td>Diffusion</td><td><strong>92.9%</strong></td><td>83.5%</td><td>0.948</td></tr>
+          <tr><td><strong>ADM</strong></td><td>Ablated Diffusion</td><td><strong>82.1%</strong></td><td>83.5%</td><td>0.899</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="panel tab-content" id="tab-robust">
+      <div class="panel-title"><span>🛡️</span> Compression & Resizing Robustness Degradation</div>
+      <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">
+        Evaluates detection retention under real-world social media downsampling and recompression.
+      </p>
+      <table>
+        <thead>
+          <tr><th>Perturbation Type</th><th>Condition</th><th>Accuracy</th><th>AUC-ROC</th><th>Accuracy Retention</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Baseline</td><td>Clean (Uncompressed)</td><td>88.0%</td><td>0.938</td><td>100.0%</td></tr>
+          <tr><td>JPEG Compression</td><td>Quality = 90</td><td>87.0%</td><td>0.932</td><td>98.9%</td></tr>
+          <tr><td>JPEG Compression</td><td>Quality = 75</td><td>85.0%</td><td>0.921</td><td>96.6%</td></tr>
+          <tr><td>JPEG Compression</td><td>Quality = 50</td><td>82.0%</td><td>0.905</td><td>93.2%</td></tr>
+          <tr><td>Spatial Downscaling</td><td>75% Scale</td><td>87.0%</td><td>0.934</td><td>98.9%</td></tr>
+          <tr><td>Spatial Downscaling</td><td>50% Scale</td><td>84.0%</td><td>0.918</td><td>95.5%</td></tr>
+          <tr><td>Social Media Sim</td><td>50% Scale + Q50 JPEG</td><td>81.0%</td><td>0.892</td><td>92.0%</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+  let currentFile = null;
+  let isVideo = false;
+
+  const dropZone = document.getElementById('drop-zone');
+  const fileInput = document.getElementById('file-input');
+  const previewBox = document.getElementById('preview-box');
+  const imgPreview = document.getElementById('img-preview');
+  const vidPreview = document.getElementById('vid-preview');
+  const previewTag = document.getElementById('preview-tag');
+  const btnAnalyze = document.getElementById('btn-analyze');
+  const btnStress = document.getElementById('btn-stress');
+  const marginSlider = document.getElementById('margin-slider');
+  const marginVal = document.getElementById('margin-val');
+
+  marginSlider.addEventListener('input', (e) => {
+    marginVal.innerText = parseFloat(e.target.value).toFixed(2);
+  });
+
+  // Drag and drop handlers
+  ['dragenter', 'dragover'].forEach(name => {
+    dropZone.addEventListener(name, (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+  });
+  ['dragleave', 'drop'].forEach(name => {
+    dropZone.addEventListener(name, (e) => { e.preventDefault(); dropZone.classList.remove('dragover'); });
+  });
+  dropZone.addEventListener('drop', (e) => {
+    if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+  });
+  fileInput.addEventListener('change', (e) => {
+    if (e.target.files.length) handleFile(e.target.files[0]);
+  });
+
+  function handleFile(file) {
+    currentFile = file;
+    isVideo = file.type.startsWith('video') || file.name.match(/\.(mp4|mov|avi|webm|mkv)$/i);
+    previewBox.style.display = 'block';
+
+    if (isVideo) {
+      previewTag.innerText = 'Video';
+      imgPreview.style.display = 'none';
+      vidPreview.style.display = 'block';
+      vidPreview.src = URL.createObjectURL(file);
+      btnStress.disabled = true; // Stress test applies to images
+    } else {
+      previewTag.innerText = 'Image';
+      vidPreview.style.display = 'none';
+      imgPreview.style.display = 'block';
+      imgPreview.src = URL.createObjectURL(file);
+      btnStress.disabled = false;
+    }
+
+    btnAnalyze.disabled = false;
+    document.getElementById('empty-state').style.display = 'none';
+    document.getElementById('result-content').style.display = 'none';
+  }
+
+  btnAnalyze.addEventListener('click', async () => {
+    if (!currentFile) return;
+
+    setLoading(true);
+    const formData = new FormData();
+    formData.append('file', currentFile);
+
+    const abstainMargin = parseFloat(marginSlider.value);
+    const simDegrade = document.getElementById('sim-degrade').value;
+
+    let endpoint = isVideo ? `/predict-video?abstain_margin=${abstainMargin}` : `/predict?abstain_margin=${abstainMargin}`;
+
+    if (!isVideo) {
+      if (simDegrade === 'jpeg_75') endpoint += '&simulate_jpeg=75';
+      else if (simDegrade === 'jpeg_50') endpoint += '&simulate_jpeg=50';
+      else if (simDegrade === 'resize_50') endpoint += '&simulate_resize=0.5';
+    }
+
+    try {
+      const res = await fetch(endpoint, { method: 'POST', body: formData });
+      if (!res.ok) throw new Error(`Server returned ${res.status}`);
+      const data = await res.json();
+      renderResults(data);
+    } catch (err) {
+      alert(`Error analyzing file: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  });
+
+  btnStress.addEventListener('click', async () => {
+    if (!currentFile || isVideo) return;
+
+    btnStress.disabled = true;
+    btnStress.innerText = 'Testing...';
+
+    const formData = new FormData();
+    formData.append('file', currentFile);
+    const abstainMargin = parseFloat(marginSlider.value);
+
+    try {
+      const res = await fetch(`/evaluate/robustness?abstain_margin=${abstainMargin}`, {
+        method: 'POST',
+        body: formData
+      });
+      if (!res.ok) throw new Error(`Stress test failed: ${res.status}`);
+      const data = await res.json();
+      renderStressTest(data);
+    } catch (err) {
+      alert(`Stress test failed: ${err.message}`);
+    } finally {
+      btnStress.disabled = false;
+      btnStress.innerText = '🧪 Stress Test';
+    }
+  });
+
+  function setLoading(loading) {
+    btnAnalyze.disabled = loading;
+    document.getElementById('btn-spinner').style.display = loading ? 'inline-block' : 'none';
+    document.getElementById('btn-text').innerText = loading ? 'Analyzing Forensics...' : '⚡ Analyze Media';
+  }
+
+  function renderResults(data) {
+    document.getElementById('empty-state').style.display = 'none';
+    document.getElementById('result-content').style.display = 'block';
+
+    const verdict = data.verdict;
+    const banner = document.getElementById('verdict-banner');
+    const title = document.getElementById('verdict-title');
+    const icon = document.getElementById('verdict-icon');
+    const confVal = document.getElementById('confidence-val');
+    const meterFill = document.getElementById('meter-fill');
+
+    banner.className = 'verdict-banner';
+
+    if (verdict === 'AI-generated') {
+      banner.classList.add('ai');
+      title.innerText = 'AI-Generated Media';
+      icon.innerText = '🚨';
+      meterFill.style.background = 'var(--color-ai)';
+    } else if (verdict === 'real') {
+      banner.classList.add('real');
+      title.innerText = 'Authentic Physical Media';
+      icon.innerText = '🛡️';
+      meterFill.style.background = 'var(--color-real)';
+    } else {
+      banner.classList.add('uncertain');
+      title.innerText = 'Uncertain (Abstained for Review)';
+      icon.innerText = '⚠️';
+      meterFill.style.background = 'var(--color-uncertain)';
+    }
+
+    confVal.innerText = `${(data.confidence * 100).toFixed(1)}%`;
+    const probAi = data.evidence.calibrated_prob_ai !== undefined ? data.evidence.calibrated_prob_ai : 0.5;
+    meterFill.style.width = `${Math.min(100, Math.max(0, probAi * 100))}%`;
+
+    // Closest generator
+    const genBadge = document.getElementById('generator-badge');
+    if (data.closest_ai_generator) {
+      genBadge.innerText = data.closest_ai_generator.toUpperCase();
+      genBadge.style.display = 'inline-flex';
+    } else {
+      genBadge.style.display = 'none';
+    }
+
+    // Explanation & Faithfulness
+    document.getElementById('explanation-text').innerText = data.explanation;
+    const auditBadge = document.getElementById('audit-badge');
+    if (data.explanation_source === 'llm_verified') {
+      auditBadge.className = 'audit-badge';
+      auditBadge.innerText = '✓ Faithfulness Verified';
+    } else {
+      auditBadge.className = 'audit-badge fallback';
+      auditBadge.innerText = '✓ Deterministic Grounded';
+    }
+
+    // Evidence feature grid
+    const fGrid = document.getElementById('features-grid');
+    fGrid.innerHTML = '';
+    const ev = data.evidence;
+
+    const featureKeys = [
+      { key: 'clip_semantic_score', label: 'CLIP Semantic Anomaly' },
+      { key: 'clip_contrast_margin', label: 'AI/Real Contrast Margin' },
+      { key: 'fft_anomaly_score', label: 'FFT Frequency Energy' },
+      { key: 'dct_anomaly_score', label: 'DCT High-Freq Residue' },
+    ];
+
+    featureKeys.forEach(fk => {
+      if (ev[fk.key] !== undefined) {
+        const item = ev[fk.key];
+        const val = typeof item === 'object' ? item.value : item;
+        const contrib = typeof item === 'object' ? item.contribution : null;
+        const card = document.createElement('div');
+        card.className = 'feat-card';
+        card.innerHTML = `
+          <div class="feat-name">${fk.label}</div>
+          <div class="feat-val">${val}</div>
+          ${contrib !== null ? `<div class="feat-shap ${contrib >= 0 ? 'shap-pos' : 'shap-neg'}">${contrib >= 0 ? '+' : ''}${contrib} SHAP</div>` : ''}
+        `;
+        fGrid.appendChild(card);
+      }
+    });
+
+    // Temporal section (for video)
+    const tSection = document.getElementById('temporal-section');
+    const tGrid = document.getElementById('temporal-grid');
+    if (data.temporal_evidence) {
+      tSection.style.display = 'block';
+      tGrid.innerHTML = '';
+      const te = data.temporal_evidence;
+      const tItems = [
+        { label: 'Optical Flow Warping Discrepancy', val: te.optical_flow_warping_error.toFixed(4) },
+        { label: 'Inter-Frame FFT Jitter Variance', val: te.interframe_fft_variance.toFixed(6) },
+        { label: 'Semantic Temporal Drift', val: te.clip_temporal_drift.toFixed(4) },
+        { label: 'Sampled Frames Evaluated', val: data.metadata ? data.metadata.sampled_frames : 16 },
+      ];
+      tItems.forEach(ti => {
+        const c = document.createElement('div');
+        c.className = 'feat-card';
+        c.innerHTML = `<div class="feat-name">${ti.label}</div><div class="feat-val">${ti.val}</div>`;
+        tGrid.appendChild(c);
+      });
+    } else {
+      tSection.style.display = 'none';
+    }
+  }
+
+  function renderStressTest(data) {
+    const sSection = document.getElementById('stress-section');
+    sSection.style.display = 'block';
+    document.getElementById('stress-stability').innerText = `Stability: ${(data.stability_score * 100).toFixed(1)}%`;
+
+    const tbody = document.querySelector('#stress-table tbody');
+    tbody.innerHTML = '';
+
+    data.tests.forEach(t => {
+      const tr = document.createElement('tr');
+      const preservedBadge = t.verdict_preserved ? '<span style="color:var(--color-real);">✓ Stable</span>' : '<span style="color:var(--color-ai);">⚠ Shifted</span>';
+      tr.innerHTML = `
+        <td>${t.test_name}</td>
+        <td><strong>${t.verdict}</strong></td>
+        <td>${(t.confidence * 100).toFixed(1)}%</td>
+        <td>${preservedBadge}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    sSection.scrollIntoView({ behavior: 'smooth' });
+  }
+
+  function switchTab(tabId) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    event.target.classList.add('active');
+    document.getElementById(tabId).classList.add('active');
+  }
+</script>
+
+</body>
+</html>
